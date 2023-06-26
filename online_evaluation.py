@@ -147,9 +147,9 @@ def evaluate(args, Model):
             [new_em_correct_num, new_em_correct_num / total_cnt])
 
         print(
-            f'Number of old correct predictions: {old_em_correct_num}. Percentage : {old_em_correct_num / total_cnt}')
+            f'Number of old correct predictions: {old_em_correct_num} / {total_cnt}. Percentage : {old_em_correct_num / total_cnt}')
         print(
-            f'Number of new correct predictions: {new_em_correct_num}. Percentage : {new_em_correct_num / total_cnt}')
+            f'Number of new correct predictions: {new_em_correct_num} / {total_cnt}. Percentage : {new_em_correct_num / total_cnt}')
     # elif args.dataset == 'WNED' or args.dataset == 'CWEB':
     #     rows_to_write.append([accuracy_correct_num, accuracy_correct_num / total_cnt])
     #     print(
@@ -157,7 +157,7 @@ def evaluate(args, Model):
     else:
         rows_to_write.append([em_correct_num, em_correct_num / total_cnt])
         print(
-            f'Number of correct predictions: {em_correct_num}. Percentage : {em_correct_num / total_cnt}')
+            f'Number of correct predictions: {em_correct_num} / {total_cnt}. Percentage : {em_correct_num / total_cnt}')
 
     with open(args.output_log, 'w', newline='', encoding='utf-8') as writefile:
         writer = csv.writer(writefile)
