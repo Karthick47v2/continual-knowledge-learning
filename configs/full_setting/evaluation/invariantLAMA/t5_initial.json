@@ -26,4 +26,4 @@
     "check_validation": true,
     "checkpoint_path": "",
     "output_log": "log/invariantLAMA/initial.csv"
-}
+} 

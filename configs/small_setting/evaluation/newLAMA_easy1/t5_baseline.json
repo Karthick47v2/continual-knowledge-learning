@@ -1,6 +1,6 @@
 {
     "input_length" : 150,
-    "output_length" : 10,
+    "output_length" : 10, 
     "num_train_epochs" : 1,
     "output_dir" : "",
     "dataset" : "newlama_easy",
