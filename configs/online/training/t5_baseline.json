@@ -1,7 +1,7 @@
 {
     "input_length": 350,
     "output_length": 350,
-    "num_train_epochs": 2,
+    "num_train_epochs": 8,
     "output_dir": "outputs/T5_large_recentnews(full)_baseline_online",
     "dataset": "recentnews",
     "dataset_version": "full",
