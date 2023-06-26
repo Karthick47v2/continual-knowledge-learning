@@ -5,8 +5,10 @@ import os
 import time
 
 from transformers import T5Tokenizer
+from torch.utils.data import DataLoader
 
-from utils import load_dataset, preprocess
+from dataset import CKLDataset
+from utils import load_dataset
 
 
 def clean_up(text):
@@ -17,14 +19,14 @@ def clean_up(text):
 def evaluate(args, Model):
     model = Model(args)
 
-    if 't5' in args.model_name_or_path:
-        model_type = 'T5'
-    elif 'gpt2' in args.model_name_or_path:
-        model_type = 'GPT2'
-
     if args.checkpoint_path != "":
+        files = os.listdir(args.checkpoint_path)
+
+        last_file = max(files, key=lambda x: int(
+            x.split("step=")[1].split(".")[0]))
+
         model = Model.load_from_checkpoint(
-            checkpoint_path=args.checkpoint_path, hparams=args, strict=False)
+            checkpoint_path=os.path.join(args.checkpoint_path, last_file), hparams=args, strict=False)
 
     model.eval()
     model.to('cuda')
@@ -32,7 +34,7 @@ def evaluate(args, Model):
     tokenizer = T5Tokenizer.from_pretrained(args.model_name_or_path)
 
     if args.mode in ['pretrain', 'finetune']:
-        dataset, ids_to_answers = load_dataset('validation', args)
+        stream_dataset, ids_to_answers = load_dataset('validation', args)
     else:
         raise Exception('Select the correct mode please.')
 
@@ -46,104 +48,96 @@ def evaluate(args, Model):
     output_folder = ("/".join((args.output_log.split('/'))[:-1]))
     if not os.path.isdir(output_folder):
         os.makedirs(output_folder)
-        print("Created folder:", output_folder)
-    else:
-        print(output_folder, "folder already exists.")
 
     start_time = time.time()
 
     collector = []
     rows_to_write = []
 
-    for idx, row in dataset.iterrows():
+    for idx, row in stream_dataset.iterrows():
         collector.append(row)
-        if len(collector) > args.eval_batch_size or idx == len(dataset) - 1:
+        if len(collector) >= args.eval_batch_size or idx == len(stream_dataset) - 1:
 
-            source, targets, labels, ground_truth = preprocess(tokenizer, args.max_input_length, args.max_output_length,
-                                                               model_type, 'validation', collector, args)
+            loader = DataLoader(CKLDataset(collector, 'validation', tokenizer,
+                                args), batch_size=len(collector), shuffle=False)
 
-            source_ids = source["input_ids"]
-            target_ids = targets["input_ids"]
-            src_mask = source["attention_mask"]
-            target_mask = targets["attention_mask"]
-            label_ids = labels if labels is not None else -1
+            for batch in iter(loader):
+                outs = model.model.generate(
+                    batch["source_ids"].cuda(),
+                    attention_mask=batch["source_mask"].cuda(),
+                    use_cache=True,
+                    decoder_attention_mask=batch['target_mask'].cuda(),
+                    max_length=args.max_output_length,
+                    num_beams=2,
+                    early_stopping=True,
+                )
 
-            outs = model.model.generate(
-                source_ids.cuda(),
-                attention_mask=src_mask.cuda(),
-                use_cache=True,
-                decoder_attention_mask=target_mask.cuda(),
-                max_length=args.max_output_length,
-                num_beams=2,
-                early_stopping=True,
-            )
-            dec = model.ids_to_clean_text(outs)
-            texts = [tokenizer.decode(ids) for ids in source_ids]
-            targets = model.ids_to_clean_text(target_ids)
+                dec = model.ids_to_clean_text(outs)
+                texts = [tokenizer.decode(ids) for ids in batch['source_ids']]
+                targets = model.ids_to_clean_text(batch['target_ids'])
 
-            for i in range(len(source_ids)):
-                total_cnt += 1
-                lines = clean_up(texts[i])
-                ground_truth = targets[i]
-                predicted = dec[i]
-                ids = label_ids[i]
+                for i in range(len(batch['source_ids'])):
+                    total_cnt += 1
+                    lines = clean_up(texts[i])
+                    ground_truth = targets[i]
+                    predicted = dec[i]
+                    ids = batch['label_ids'][i].item()
 
-                if args.dataset == 'invariantlama':
-                    em_correct_num += model.exact_match_score(
-                        predicted, ground_truth)
-                    rows_to_write.append(
-                        [ids, lines, ground_truth, predicted])
+                    if args.dataset == 'invariantlama':
+                        em_correct_num += model.exact_match_score(
+                            predicted, ground_truth)
+                        rows_to_write.append(
+                            [ids, lines, ground_truth, predicted])
 
-                elif args.dataset == 'updatedlama':
-                    old_answer_list = ids_to_answers[str(ids)][0]['old']
-                    new_answer_list = ids_to_answers[str(ids)][0]['new']
-                    old_em_correct = False
-                    new_em_correct = False
-                    old_global_answer = old_answer_list[0]
-                    new_global_answer = new_answer_list[0]
+                    elif args.dataset == 'updatedlama':
+                        old_answer_list = ids_to_answers[str(ids)][0]['old']
+                        new_answer_list = ids_to_answers[str(ids)][0]['new']
+                        old_em_correct = False
+                        new_em_correct = False
+                        old_global_answer = old_answer_list[0]
+                        new_global_answer = new_answer_list[0]
 
-                    for answer in old_answer_list:
-                        if model.exact_match_score(predicted, answer):
-                            old_em_correct = True
-                            old_global_answer = answer
-                    if old_em_correct:
-                        old_em_correct_num += 1
+                        for answer in old_answer_list:
+                            if model.exact_match_score(predicted, answer):
+                                old_em_correct = True
+                                old_global_answer = answer
+                        if old_em_correct:
+                            old_em_correct_num += 1
 
-                    for answer in new_answer_list:
-                        if model.exact_match_score(predicted, answer):
-                            new_em_correct = True
-                            new_global_answer = answer
-                    if new_em_correct:
-                        new_em_correct_num += 1
+                        for answer in new_answer_list:
+                            if model.exact_match_score(predicted, answer):
+                                new_em_correct = True
+                                new_global_answer = answer
+                        if new_em_correct:
+                            new_em_correct_num += 1
 
-                    rows_to_write.append(
-                        [ids, lines, old_global_answer, new_global_answer, predicted])
+                        rows_to_write.append(
+                            [ids, lines, old_global_answer, new_global_answer, predicted])
 
-                elif args.dataset in ['newlama', 'newlama_easy']:
-                    answer_list = ids_to_answers[str(ids)]
-                    em_correct = False
-                    global_answer = answer_list[0]
-                    for answer in answer_list:
-                        if model.exact_match_score(predicted, answer):
-                            em_correct = True
-                            global_answer = answer
-                    if em_correct:
-                        em_correct_num += 1
-                    rows_to_write.append(
-                        [ids, lines, global_answer, predicted])
-                # elif args.dataset == 'WNED' or args.dataset == 'CWEB':
-                #     accuracy = model.accuracy_match_score(
-                #         predicted, ground_truth)
-                #     if accuracy == 1:
-                #         accuracy_correct_num += 1
-                #     rows_to_write.append([lines, ground_truth, predicted])
-                else:
-                    raise NameError(
-                        'Select the correct Dataset for zeroshot evaluation!')
+                    elif args.dataset in ['newlama', 'newlama_easy']:
+                        answer_list = ids_to_answers[str(ids)]
+                        em_correct = False
+                        global_answer = answer_list[0]
+                        for answer in answer_list:
+                            if model.exact_match_score(predicted, answer):
+                                em_correct = True
+                                global_answer = answer
+                        if em_correct:
+                            em_correct_num += 1
+                        rows_to_write.append(
+                            [ids, lines, global_answer, predicted])
+                    # elif args.dataset == 'WNED' or args.dataset == 'CWEB':
+                    #     accuracy = model.accuracy_match_score(
+                    #         predicted, ground_truth)
+                    #     if accuracy == 1:
+                    #         accuracy_correct_num += 1
+                    #     rows_to_write.append([lines, ground_truth, predicted])
+                    else:
+                        raise NameError(
+                            'Select the correct Dataset for zeroshot evaluation!')
 
                 collector = []
 
-    print(f'Number of total validation data: {total_cnt}')
     print(f'End time: {time.time() - start_time}')
 
     if args.dataset == 'updatedlama':

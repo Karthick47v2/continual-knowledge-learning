@@ -37,19 +37,19 @@ def load_dataset(type_path, args, length=None):
 
         # for mixreview pretraining corpus
         elif type_path == 'pretrain':
-            if args.dataset_version == 'small':
-                total_line = 802776
-                skip = sorted(random.sample(
-                    range(1, total_line+1), total_line-length))
-                dataset = pd.read_csv('data/wikipedia_pretrain_small.csv', usecols=[
-                    'input', 'output', 'original'], skiprows=skip)
+            # if args.dataset_version == 'small':
+            total_line = 802776
+            skip = sorted(random.sample(
+                range(1, total_line+1), total_line-length))
+            dataset = pd.read_csv('data/wikipedia_pretrain_small.csv', usecols=[
+                'input', 'output', 'original'], skiprows=skip)
 
-            elif args.dataset_version == 'full':
-                total_line = 8021155
-                skip = sorted(random.sample(
-                    range(1, total_line+1), total_line-length))
-                dataset = pd.read_csv(
-                    'data/wikipedia_pretrain_full.csv', usecols=['input', 'output'], skiprows=skip)
+            # elif args.dataset_version == 'full':
+            #     total_line = 8021155
+            #     skip = sorted(random.sample(
+            #         range(1, total_line+1), total_line-length))
+            #     dataset = pd.read_csv(
+            #         'data/wikipedia_pretrain_small.csv', usecols=['input', 'output'], skiprows=skip)
 
     # # GPT-2  was  initially  pretrained  on  WebText  (Dec  2019),  which  consists  of  8  million  documents  withWikipedia  pages  excluded.
     # # In  order  to  measure  the  performance  on  INVARIANTLAMA  constructed  from Wikipedia, we continually pretrain GPT-2 on a subset of Wikipedia (May 2020) for 14k global training stepsbefore CKL.
@@ -169,101 +169,4 @@ def load_dataset(type_path, args, length=None):
         #     dataset = kilt_wow[type_path]
         else:
             raise NameError('Select the correct Dataset!')
-
-    print(f'Length of dataset retrieving is.. {len(dataset)}')
     return dataset, ids_to_answers
-
-
-def preprocess(tokenizer, input_length, output_length, model_type, type_path, batch, args, index=None):
-
-    input_ = []
-    target_ = []
-    ground_truth_ = []
-    labels = []
-
-    for data in batch:
-        # continual pretraining
-        if args.dataset == 'recentnews':
-            if model_type == 'GPT2':
-                input_.append(data['original'])
-                target_.append(data['original'])
-
-            elif model_type == 'T5':
-                input_.append(data['input'] if isinstance(
-                    data['input'], str) else '')
-                target_.append(data['output'] if isinstance(
-                    data['output'], str) else '')
-
-        # elif args.dataset == 'wikitext103':
-        #     input_.append(data['original'])
-        #     target_.append(data['original'])
-        # # evaluation
-        else:
-            if args.dataset == 'invariantlama':
-                if model_type == 'GPT2':
-                    input_pre = data['input']
-                    for index, word in enumerate(input_pre.split()):
-                        if word == '<extra_id_0>':
-                            input_pre = ' '.join(input_pre.split()[:index])
-                            break
-
-                    if type_path == 'train':
-                        input_.append(input_pre + ' ' +
-                                      data['output'] + '.')
-                        target_.append(input_pre + ' ' +
-                                       data['output'] + '.')
-
-                    else:
-                        input_.append(input_pre)
-                        ground_truth_.append(data['output'])
-                        target_.append(input_pre + ' ' +
-                                       data['output'] + '.')
-
-                elif model_type == 'T5':
-                    input_.append(data['input'])
-                    target_.append(data['output'])
-
-            elif args.dataset == 'updatedlama':
-                input_.append(data['statement'])
-                target_.append(data['new_answer'])
-
-            elif args.dataset in ['newlama', 'newlama_easy']:
-                input_.append(data['statement'])
-                target_.append(data['answer'])
-
-            # elif args.dataset == 'newqa_easy':
-            #     if model_type == 'GPT2':
-            #         if type_path == 'train':
-            #             input_.append(data['question'] + ' ' + data['answer'].split(';')[0] + '.')
-            #             target_.append(data['question'] + ' ' + data['answer'].split(';')[0] + '.')
-            #         else:
-            #             input_.append(data['question'])
-            #             ground_truth_.append(data['answer'].split(';')[0] + '.')
-            #             target_.append(str(data['question']) + ' ' + str(data['answer']))
-            #     elif model_type == 'T5':
-            #         input_.append(data['question'])
-            #         target_.append(data['answer'].split(';')[0])
-            # elif args.dataset in ['TriviaQA', 'fever', 'AY2', 'WNED', 'CWEB', 'TREX', 'zsRE', 'NQ', 'HotpotQA', 'ELI5', 'WOW']:
-            #     input_.append(data['input'])
-            #     target_.append(data['output'][0]['answer'])
-
-            else:
-                raise Exception('Select the correct dataset!')
-
-            if args.dataset in ['invariantlama', 'TriviaQA', 'fever', 'AY2', 'WNED', 'CWEB', 'TREX', 'zsRE', 'NQ', 'HotpotQA', 'ELI5', 'WOW']:
-                labels.append(data['id'])
-
-            elif args.dataset in ['newlama', 'updatedlama', 'newlama_easy', 'newqa_easy']:
-                labels.append(data['unique_id'])
-
-            else:
-                labels.append(None)
-
-    source = tokenizer.batch_encode_plus(input_, max_length=input_length,
-                                         padding='max_length', truncation=True, return_tensors="pt")
-    targets = tokenizer.batch_encode_plus(target_, max_length=output_length,
-                                          padding='max_length', truncation=True, return_tensors="pt")
-    ground_truth = tokenizer.batch_encode_plus(ground_truth_, max_length=output_length, padding='max_length',
-                                               truncation=True, return_tensors="pt") if type_path == 'validation' and model_type == 'GPT2' else None
-
-    return source, targets, labels, ground_truth
