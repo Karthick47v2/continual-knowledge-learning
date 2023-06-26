@@ -24,6 +24,7 @@ def set_seed(seed):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default=None, type=str)
+    parser.add_argument('--model', default=None, type=str)
     arg_ = parser.parse_args()
     if arg_.config is None:
         raise NameError("Include a config file in the argument please.")
@@ -106,7 +107,7 @@ if __name__ == '__main__':
     Model = load_model(model_type)
 
     if args.check_validation_only:
-        evaluate(args, Model)
+        evaluate(args, arg_.model, Model)
     else:
         if os.path.exists(args.output_dir):
             shutil.rmtree(args.output_dir)

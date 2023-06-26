@@ -16,17 +16,18 @@ def clean_up(text):
         .replace(',', '').replace("'", '').replace('"', '')
 
 
-def evaluate(args, Model):
+def evaluate(args, model_checkpoint, Model):
     model = Model(args)
 
     if args.checkpoint_path != "":
-        files = os.listdir(args.checkpoint_path)
+        if model_checkpoint is None:
+            files = os.listdir(args.checkpoint_path)
 
-        last_file = max(files, key=lambda x: int(
-            x.split("step=")[1].split(".")[0]))
+            model_checkpoint = os.path.join(args.checkpoint_path, max(files, key=lambda x: int(
+                x.split("step=")[1].split(".")[0])))
 
         model = Model.load_from_checkpoint(
-            checkpoint_path=os.path.join(args.checkpoint_path, last_file), hparams=args, strict=False)
+            checkpoint_path=model_checkpoint, hparams=args, strict=False)
 
     model.eval()
     model.to('cuda')
